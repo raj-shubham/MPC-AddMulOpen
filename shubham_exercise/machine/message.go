@@ -38,5 +38,4 @@ type ProductMessage struct{
 	Proof      mulzkp.Proof
 	Acommit    secp256k1.Point
 	Bcommit    secp256k1.Point
-	H 		   secp256k1.Point
 }

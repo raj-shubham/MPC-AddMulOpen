@@ -80,6 +80,10 @@ func (m *Machine) Handle(msg Message) ([]Message, secp256k1.Fn, bool) {
 		surge.FromBinary(&MarshalledSharing, msg.Data)
 		rshare := MarshalledSharing.Rsharing
 		sshare := MarshalledSharing.Ssharing
+		if ((!shamir.IsValid(m.h, &rshare.Commitment, &rshare.Vshare))&&
+			(!shamir.IsValid(m.h, &sshare.Commitment, &sshare.Vshare))){
+				panic("Invalid shares")
+			}
 		m.rShares = append(m.rShares, rshare.Vshare)
 		m.rCommitment = append(m.rCommitment, rshare.Commitment)
 		m.sShares = append(m.sShares, sshare.Vshare)
@@ -132,7 +136,7 @@ func (m *Machine) Handle(msg Message) ([]Message, secp256k1.Fn, bool) {
 			)
 			share.Add(&share, &m.zeroShare)
 			msgProd := ProductMessage{VShare:share, Commitment:productShareCommitment, Proof:proof,
-						Acommit:aShareCommitment, Bcommit:bShareCommitment, H:m.h}
+						Acommit:aShareCommitment, Bcommit:bShareCommitment}
 			Marshalled, _ := surge.ToBinary(&msgProd)
 			m.state += 1
 			for _,ind := range m.indices{
@@ -142,7 +146,7 @@ func (m *Machine) Handle(msg Message) ([]Message, secp256k1.Fn, bool) {
 	case open:
 		var unMarshalled ProductMessage
 		surge.FromBinary(&unMarshalled, msg.Data)
-		zkpVerify := mulzkp.Verify(&unMarshalled.H, &unMarshalled.Acommit, &unMarshalled.Bcommit, &unMarshalled.Commitment, &unMarshalled.Proof)
+		zkpVerify := mulzkp.Verify(&m.h, &unMarshalled.Acommit, &unMarshalled.Bcommit, &unMarshalled.Commitment, &unMarshalled.Proof)
 		if !zkpVerify{
 			panic("Product verification failed")
 		}
