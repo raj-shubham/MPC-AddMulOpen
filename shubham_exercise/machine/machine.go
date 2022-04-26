@@ -16,7 +16,6 @@ type Machine struct{
 	sShares			[]shamir.VerifiableShare
 	rCommitment 	[]shamir.Commitment
 	sCommitment 	[]shamir.Commitment
-	sSumCommitment 	shamir.Commitment
 	index			secp256k1.Fn
 	indices			[]secp256k1.Fn
 	zeroShare 		shamir.VerifiableShare
