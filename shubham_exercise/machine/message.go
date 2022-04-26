@@ -1,9 +1,9 @@
 package machine
 
 import (
+	"github.com/renproject/mpc/mulopen/mulzkp"
 	"github.com/renproject/secp256k1"
 	"github.com/renproject/shamir"
-	"github.com/renproject/mpc/mulopen/mulzkp"
 )
 
 type MsgType = uint8
@@ -22,17 +22,17 @@ type Message struct {
 	Data []byte
 }
 
-type Sharing struct{
-	Vshare 		shamir.VerifiableShare	
-	Commitment 	shamir.Commitment
+type Sharing struct {
+	Vshare     shamir.VerifiableShare
+	Commitment shamir.Commitment
 }
 
-type RSsharing struct{
-	Rsharing	Sharing
-	Ssharing	Sharing
+type RSsharing struct {
+	Rsharing Sharing
+	Ssharing Sharing
 }
 
-type ProductMessage struct{
+type ProductMessage struct {
 	VShare     shamir.VerifiableShare
 	Commitment secp256k1.Point
 	Proof      mulzkp.Proof
