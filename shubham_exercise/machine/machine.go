@@ -8,27 +8,19 @@ import (
 )
 
 type Machine struct{
-	state			uint8
 	k 				int
 	h 				secp256k1.Point
 	r				secp256k1.Fn
 	s				secp256k1.Fn
-	tau				secp256k1.Fn
 	rShares			[]shamir.VerifiableShare
-	rSharesSum 		shamir.VerifiableShare
-	rSumShares		shamir.VerifiableShares
 	sShares			[]shamir.VerifiableShare
-	sSharesSum 		shamir.VerifiableShare
-	sSumShares		shamir.VerifiableShares
 	rCommitment 	[]shamir.Commitment
-	rSumCommitment 	shamir.Commitment
 	sCommitment 	[]shamir.Commitment
 	sSumCommitment 	shamir.Commitment
 	index			secp256k1.Fn
 	indices			[]secp256k1.Fn
 	zeroShare 		shamir.VerifiableShare
-	zerocommits		shamir.Commitment
-	output 			shamir.VerifiableShare
+	zeroCommits		shamir.Commitment
 	outputShares	shamir.VerifiableShares
 }
 
@@ -42,8 +34,7 @@ func NewMachine(
 ) (Machine, secp256k1.Fn, secp256k1.Fn) {
 	r := secp256k1.RandomFn()
 	s := secp256k1.RandomFn()
-	op := shamir.NewVerifiableShare(shamir.NewShare(secp256k1.RandomFn(), secp256k1.NewFnFromU16(0)),secp256k1.RandomFn())
-	machine := Machine{state:0, k:k, h:h, r: r, s: s, index:index, indices:indices, zeroShare: rzgShare, zerocommits: rzgCommitment, output:op, tau:secp256k1.RandomFn()}
+	machine := Machine{k:k, h:h, r: r, s: s, index:index, indices:indices, zeroShare: rzgShare, zeroCommits: rzgCommitment}
 	return machine, r, s
 }
 
@@ -59,107 +50,81 @@ func (m *Machine) Start() []Message {
 	for i,index := range m.indices{
 		rSharing  := Sharing{Vshare:rShares[i], Commitment:rCommitment}
 		sSharing  := Sharing{Vshare:sShares[i], Commitment:sCommitment}
-		r_s_Sharing := RSsharing{Rsharing:rSharing, Ssharing:sSharing}
-		r_s_MarshalledSharing, _ := surge.ToBinary(&r_s_Sharing)
-		msg = append(msg, Message{To:index, From:m.index, Ty:share, Data:r_s_MarshalledSharing})
+		rsSharing := RSsharing{Rsharing:rSharing, Ssharing:sSharing}
+		rsMarshalledSharing, _ := surge.ToBinary(&rsSharing)
+		msg = append(msg, Message{To:index, From:m.index, Ty:share, Data:rsMarshalledSharing})
 	}
 	
 	return msg
 }
 
 func (m *Machine) Handle(msg Message) ([]Message, secp256k1.Fn, bool) {
-	var msgbuffer []Message 
+	var msgBuffer []Message 
 	var output secp256k1.Fn
-	var flag bool
-	flag = false
+	var done bool
+	done = false
 	output = secp256k1.RandomFn()
 	switch msg.Ty {
 	case share:
-		var MarshalledSharing RSsharing
+		var marshalledSharing RSsharing
 		var product secp256k1.Fn
-		surge.FromBinary(&MarshalledSharing, msg.Data)
-		rshare := MarshalledSharing.Rsharing
-		sshare := MarshalledSharing.Ssharing
-		if ((!shamir.IsValid(m.h, &rshare.Commitment, &rshare.Vshare))&&
-			(!shamir.IsValid(m.h, &sshare.Commitment, &sshare.Vshare))){
+		surge.FromBinary(&marshalledSharing, msg.Data)
+		rShare := marshalledSharing.Rsharing
+		sShare := marshalledSharing.Ssharing
+		if ((!shamir.IsValid(m.h, &rShare.Commitment, &rShare.Vshare))&&
+			(!shamir.IsValid(m.h, &sShare.Commitment, &sShare.Vshare))){
 				panic("Invalid shares")
 			}
-		m.rShares = append(m.rShares, rshare.Vshare)
-		m.rCommitment = append(m.rCommitment, rshare.Commitment)
-		m.sShares = append(m.sShares, sshare.Vshare)
-		m.sCommitment = append(m.sCommitment, sshare.Commitment)
+		m.rShares = append(m.rShares, rShare.Vshare)
+		m.rCommitment = append(m.rCommitment, rShare.Commitment)
+		m.sShares = append(m.sShares, sShare.Vshare)
+		m.sCommitment = append(m.sCommitment, sShare.Commitment)
 		if len(m.indices) == len(m.rShares){
-			rsum := m.rShares[0]
-			rtempCommitment := m.rCommitment[0]
-			ssum := m.sShares[0]
-			stempCommitment := m.sCommitment[0]
-
-			for i,share := range m.rShares{
-				if 0 != i {
-					rsum.Add(&rsum, &share)
-				}
-			}
-			for i,share := range m.sShares{
-				if 0 != i {
-					ssum.Add(&ssum, &share)
-				}
-			}
-			
-			for i,com := range m.rCommitment{
-				if 0 != i {
-					rtempCommitment.Add(rtempCommitment, com)
-				}
-			}
-			for i,com := range m.sCommitment{
-				if 0 != i {
-					stempCommitment.Add(stempCommitment, com)
-				}
-			}
-			m.rSharesSum = rsum
-			m.sSharesSum = ssum
-			m.rSumCommitment = rtempCommitment
-			m.sSumCommitment = stempCommitment
-			product.Mul(&m.rSharesSum.Share.Value, &m.sSharesSum.Share.Value)
-			aShareCommitment := PolyEvalPoint(m.rSumCommitment, m.index)
-			bShareCommitment := PolyEvalPoint(m.sSumCommitment, m.index)
-			productShareCommitment := pedersenCommit(&product, &m.tau, &m.h)
+			rSum := vshareSum(m.rShares)
+			sSum := vshareSum(m.sShares)
+			rTempCommitment := commitSum(m.rCommitment)
+			sTempCommitment := commitSum(m.sCommitment)
+			tau := secp256k1.RandomFn()
+			product.Mul(&rSum.Share.Value, &sSum.Share.Value)
+			aShareCommitment := PolyEvalPoint(rTempCommitment, m.index)
+			bShareCommitment := PolyEvalPoint(sTempCommitment, m.index)
+			productShareCommitment := pedersenCommit(&product, &tau, &m.h)
 			share := shamir.VerifiableShare{
 				Share: shamir.Share{
 					Index: m.index,
 					Value: product,
 				},
-				Decommitment: m.tau,
+				Decommitment: tau,
 			}
 			proof := mulzkp.CreateProof(&m.h, &aShareCommitment, &bShareCommitment, &productShareCommitment,
-				m.rSharesSum.Share.Value, m.sSharesSum.Share.Value,
-				m.rSharesSum.Decommitment, m.sSharesSum.Decommitment, m.tau,
+				rSum.Share.Value, sSum.Share.Value,
+				rSum.Decommitment, sSum.Decommitment, tau,
 			)
 			share.Add(&share, &m.zeroShare)
 			msgProd := ProductMessage{VShare:share, Commitment:productShareCommitment, Proof:proof,
 						Acommit:aShareCommitment, Bcommit:bShareCommitment}
-			Marshalled, _ := surge.ToBinary(&msgProd)
-			m.state += 1
+			marshalled, _ := surge.ToBinary(&msgProd)
 			for _,ind := range m.indices{
-				msgbuffer = append(msgbuffer, Message{To:ind, From:m.index, Ty:open, Data:Marshalled})	
+				msgBuffer = append(msgBuffer, Message{To:ind, From:m.index, Ty:open, Data:marshalled})	
 			}
 		}
 	case open:
-		var unMarshalled ProductMessage
-		surge.FromBinary(&unMarshalled, msg.Data)
-		zkpVerify := mulzkp.Verify(&m.h, &unMarshalled.Acommit, &unMarshalled.Bcommit, &unMarshalled.Commitment, &unMarshalled.Proof)
+		var unmarshalled ProductMessage
+		surge.FromBinary(&unmarshalled, msg.Data)
+		zkpVerify := mulzkp.Verify(&m.h, &unmarshalled.Acommit, &unmarshalled.Bcommit, &unmarshalled.Commitment, &unmarshalled.Proof)
 		if !zkpVerify{
 			panic("Product verification failed")
 		}
-		m.outputShares = append(m.outputShares, unMarshalled.VShare)
+		m.outputShares = append(m.outputShares, unmarshalled.VShare)
 		if len(m.outputShares) == len(m.indices){
 			output = shamir.Open(m.outputShares.Shares())
-			flag = true
+			done = true
 		}
 
 	default:
 		/* code */
 	}
-	return msgbuffer, output, flag
+	return msgBuffer, output, done
 }
 
 func pedersenCommit(value, decommitment *secp256k1.Fn, h *secp256k1.Point) secp256k1.Point {
@@ -178,4 +143,24 @@ func PolyEvalPoint(commitment shamir.Commitment, index secp256k1.Fn) secp256k1.P
 		acc.Add(&acc, &commitment[l])
 	}
 	return acc
+}
+
+func vshareSum(vshare shamir.VerifiableShares) shamir.VerifiableShare{
+	sum := vshare[0]
+	for i,share := range vshare{
+		if 0 != i {
+			sum.Add(&sum, &share)
+		}
+	}
+	return sum
+}
+
+func commitSum(commit []shamir.Commitment) shamir.Commitment{
+	sum := commit[0]
+	for i,share := range commit{
+		if 0 != i {
+			sum.Add(sum, share)
+		}
+	}
+	return sum
 }

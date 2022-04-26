@@ -37,7 +37,7 @@ func main() {
 	expectedOutput.Mul(&r, &s)
 
 	outputs := runMachines(machines)
-	
+
 	if len(outputs) != n {
 		fmt.Printf("not all machines produced an output: only %v/%v outputs returned\n", len(outputs), n)
 		return
